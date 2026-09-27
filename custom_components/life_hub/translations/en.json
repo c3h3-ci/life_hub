@@ -11,8 +11,14 @@
     }
   },
   "options": {
-    "abort": {
-      "no_options": "No options available."
+    "step": {
+      "init": {
+        "title": "Default Location",
+        "description": "Default location for all providers. Leave empty to use HA system location ({ha_address}). Supports city name (e.g. \"Shenzhen\") or coordinates (e.g. \"22.543,114.057\").",
+        "data": {
+          "address": "Address"
+        }
+      }
     }
   },
   "config_subentries": {
@@ -40,6 +46,94 @@
         "max_instances_reached": "Maximum number of Meituan instances reached."
       },
       "entry_type": "Meituan Service"
+    },
+    "meituan_travel": {
+      "initiate_flow": {
+        "user": "Add Meituan Travel",
+        "reconfigure": "Meituan Travel Settings"
+      },
+      "channel_title": "Meituan Travel",
+      "step": {
+        "set_options": {
+          "title": "Add Meituan Travel",
+          "description": "Enter your Meituan Travel API Token.",
+          "data": {
+            "api_token": "API Token"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "Failed to connect."
+      },
+      "abort": {
+        "already_configured": "Meituan Travel is already configured.",
+        "max_instances_reached": "Maximum number of instances reached."
+      },
+      "entry_type": "Meituan Travel Service"
+    },
+    "meituan_paotui": {
+      "initiate_flow": {
+        "user": "Add Meituan Paotui",
+        "reconfigure": "Meituan Paotui Settings"
+      },
+      "channel_title": "Meituan Paotui",
+      "step": {
+        "set_options": {
+          "title": "Add Meituan Paotui",
+          "description": "Enter your Meituan Paotui passport token.\n\n[📖 How to get Token?](https://github.com/meituan/MT-Paotui-For-Client)",
+          "data": {
+            "passport_token": "Passport Token",
+            "lat": "Latitude",
+            "lng": "Longitude"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "Failed to connect. Please check your passport token."
+      },
+      "abort": {
+        "already_configured": "Meituan Paotui is already configured.",
+        "max_instances_reached": "Maximum number of Meituan Paotui instances reached."
+      },
+      "entry_type": "Meituan Paotui Service"
+    },
+    "meituan_coupon": {
+      "initiate_flow": {
+        "user": "Add Meituan Coupon",
+        "reconfigure": "Meituan Coupon Settings"
+      },
+      "channel_title": "Meituan Coupon",
+      "step": {
+        "sms_login": {
+          "title": "Phone Login",
+          "description": "Enter your phone number to receive SMS code.",
+          "data": {
+            "phone": "Phone Number"
+          }
+        },
+        "verify_code": {
+          "title": "Verify Code",
+          "description": "Enter the SMS code sent to {phone}.",
+          "data": {
+            "code": "SMS Code"
+          }
+        },
+        "set_options": {
+          "title": "Add Meituan Coupon",
+          "description": "Enter your coupon token.",
+          "data": {
+            "user_token": "User Token"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "Failed to connect."
+      },
+      "abort": {
+        "already_configured": "Meituan Coupon is already configured.",
+        "max_instances_reached": "Maximum number of Meituan Coupon instances reached."
+      },
+      "entry_type": "Meituan Coupon Service"
     },
     "ctrip": {
       "initiate_flow": {
@@ -276,6 +370,30 @@
         "max_instances_reached": "Maximum instances reached."
       },
       "entry_type": "Didi Travel Service"
+    },
+    "luckin": {
+      "initiate_flow": {
+        "user": "Add Luckin Coffee",
+        "reconfigure": "Luckin Coffee Settings"
+      },
+      "channel_title": "Luckin Coffee",
+      "step": {
+        "set_options": {
+          "title": "Add Luckin Coffee",
+          "description": "Enter your Luckin Coffee account.",
+          "data": {
+            "phone": "Phone"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "Failed to connect."
+      },
+      "abort": {
+        "already_configured": "Luckin Coffee is already configured.",
+        "max_instances_reached": "Maximum instances reached."
+      },
+      "entry_type": "Luckin Coffee Service"
     }
   },
   "entity": {
@@ -344,6 +462,27 @@
         }
       },
       "status_didi": {
+        "name": "Status",
+        "state": {
+          "connected": "Connected",
+          "disconnected": "Disconnected"
+        }
+      },
+      "status_meituan_paotui": {
+        "name": "Status",
+        "state": {
+          "connected": "Connected",
+          "disconnected": "Disconnected"
+        }
+      },
+      "status_meituan_coupon": {
+        "name": "Status",
+        "state": {
+          "connected": "Connected",
+          "disconnected": "Disconnected"
+        }
+      },
+      "status_luckin": {
         "name": "Status",
         "state": {
           "connected": "Connected",

@@ -51,6 +51,18 @@ cp -r life_hub/custom_components/life_hub /path/to/ha/config/custom_components/
 3. 根据提示填写凭证（API Token / 手机号 / API Key 等）
 4. 添加成功后自动重载，传感器与服务即可使用
 
+### 默认地址（可选）
+
+在 **Life Hub → 选项** 中可设置默认地址：
+- 支持完整地址：`广东省深圳市福田区XX花园X栋X单元`
+- 支持经纬度：`22.543,114.057`
+- 留空则使用 HA 系统位置
+
+该地址会用于：
+- 🌤️ 百度天气查询
+- 🍔 一鸣查找最近门店
+- 🍟 麦当劳/美团下单时自动填充配送地址
+
 ### Token 获取指南
 
 | 服务 | Token 获取地址 | 配置指南 |
@@ -72,11 +84,17 @@ cp -r life_hub/custom_components/life_hub /path/to/ha/config/custom_components/
 
 所有服务遵循统一命名格式：**`life_hub.{provider}_call_tool`**
 
+### 通用参数
+
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `tool` | string | ✅ | 选择要调用的功能 |
 | `params` | object | ❌ | 功能参数（依 tool 而异） |
-| `subentry_id` | string | ❌ | 指定操作哪个账号（多账号时使用） |
+| `store` | string | ❌ | 门店中文名（麦当劳使用，自动解析为门店编码） |
+| `product` | string | ❌ | 餐品名称筛选（麦当劳使用） |
+| `target_device` | device | ❌ | 选择设备来指定操作哪个账号 |
+| `target_entity` | entity | ❌ | 选择传感器来指定操作哪个账号 |
+| `subentry_id` | string | ❌ | 直接输入子条目ID |
 
 ### 示例
 
@@ -85,13 +103,12 @@ cp -r life_hub/custom_components/life_hub /path/to/ha/config/custom_components/
 service: life_hub.yiming_call_tool
 data:
   tool: get_balance
-  params: {}
 
 # 一鸣：领所有优惠券（倪一可的账号）
 service: life_hub.yiming_call_tool
 data:
   tool: receive_all_coupons
-  subentry_id: "01JX..."
+  target_device: "device_id..."
 
 # 一鸣：批量领所有账号的券
 service: life_hub.yiming_call_tool
@@ -103,6 +120,20 @@ service: life_hub.mcdonalds_call_tool
 data:
   tool: available-coupons
 
+# 麦当劳：查餐品价格（自动解析门店名）
+service: life_hub.mcdonalds_call_tool
+data:
+  tool: query-meals
+  store: "福田高铁站"
+  params:
+    beType: 1
+    orderType: 1
+
+# 麦当劳：自动领券
+service: life_hub.mcdonalds_call_tool
+data:
+  tool: auto-bind-coupons
+
 # 滴滴：预估价格
 service: life_hub.didi_call_tool
 data:
@@ -111,10 +142,26 @@ data:
     from_name: "深圳北站"
     to_name: "深圳宝安机场"
 
-# 美团：搜酒店
+# 滴滴：搜索地点
+service: life_hub.didi_call_tool
+data:
+  tool: maps_textsearch
+  params:
+    keywords: "天安门"
+    city: "北京"
+
+# 百度地图：搜索POI
+service: life_hub.baidu_map_call_tool
+data:
+  tool: search_poi
+  params:
+    query: "天安门"
+    region: "北京"
+
+# 美团：查优惠券
 service: life_hub.meituan_call_tool
 data:
-  tool: get_orders
+  tool: get_coupons
 
 # 美团旅行：规划行程
 service: life_hub.meituan_travel_call_tool
@@ -133,7 +180,7 @@ data:
 
 每个已配置的子条目都会创建一个状态传感器：
 ```
-sensor.life_hub_<provider>_status → "已连接" / "未连接"
+sensor.<provider>_连接状态 → "connected" / "disconnected"
 ```
 
 ### 数据传感器（部分服务）
@@ -142,52 +189,52 @@ sensor.life_hub_<provider>_status → "已连接" / "未连接"
 
 | 传感器 | 说明 |
 |--------|------|
-| `sensor.life_hub_<key>_balance` | 储值余额 |
-| `sensor.life_hub_<key>_member_name` | 会员姓名 |
-| `sensor.life_hub_<key>_member_level` | 会员等级 |
-| `sensor.life_hub_<key>_member_equity` | 会员权益层级 |
-| `sensor.life_hub_<key>_growth_value` | 成长值 |
-| `sensor.life_hub_<key>_member_expiry` | 会员到期日 |
-| `sensor.life_hub_<key>_integral` | 当前积分 |
-| `sensor.life_hub_<key>_coupon_sum` | 优惠券总张数 |
-| `sensor.life_hub_<key>_coupon_usable` | 可用优惠券张数 |
-| `sensor.life_hub_<key>_coupon_available` | 可领优惠券张数 |
-| `sensor.life_hub_<key>_recent_orders` | 最近订单数 |
-| `sensor.life_hub_<key>_recent_transaction` | 最近交易金额 |
-| `sensor.life_hub_<key>_recent_integral` | 最近积分变动 |
-| `sensor.life_hub_<key>_nearest_store` | 最近门店 |
-| `sensor.life_hub_<key>_default_address` | 默认地址 |
-| `sensor.life_hub_<key>_app_notice` | App 公告 |
-| `sensor.life_hub_<key>_qrcode` | 付款二维码 |
+| `sensor.<key>_余额` | 储值余额 |
+| `sensor.<key>_会员姓名` | 会员姓名 |
+| `sensor.<key>_会员等级` | 会员等级 |
+| `sensor.<key>_会员权益` | 会员权益层级 |
+| `sensor.<key>_成长值` | 成长值 |
+| `sensor.<key>_会员到期日` | 会员到期日 |
+| `sensor.<key>_积分` | 当前积分 |
+| `sensor.<key>_优惠券汇总` | 优惠券总张数 |
+| `sensor.<key>_可用优惠券` | 可用优惠券张数 |
+| `sensor.<key>_可领优惠券` | 可领优惠券张数 |
+| `sensor.<key>_最近订单` | 最近订单数 |
+| `sensor.<key>_交易明细` | 最近交易金额 |
+| `sensor.<key>_积分明细` | 最近积分变动 |
+| `sensor.<key>_最近门店` | 最近门店 |
+| `sensor.<key>_默认地址` | 默认地址 |
+| `sensor.<key>_App公告` | App 公告 |
+| `sensor.<key>_付款二维码` | 付款二维码 |
 
 #### 🍟 麦当劳（7 个）
 
 | 传感器 | 说明 |
 |--------|------|
-| `sensor.life_hub_<key>_available_points` | 可用积分 |
-| `sensor.life_hub_<key>_accumulative_points` | 累计积分 |
-| `sensor.life_hub_<key>_expiring_points` | 即将过期积分 |
-| `sensor.life_hub_<key>_available_coupons` | 可领优惠券数量 |
-| `sensor.life_hub_<key>_my_coupons` | 我的优惠券数量 |
-| `sensor.life_hub_<key>_active_campaigns` | 进行中活动数 |
-| `sensor.life_hub_<key>_active_orders` | 进行中订单数 |
+| `sensor.<key>_可用积分` | 可用积分 |
+| `sensor.<key>_累计积分` | 累计积分 |
+| `sensor.<key>_即将过期积分` | 即将过期积分 |
+| `sensor.<key>_可领优惠券` | 可领优惠券数量 |
+| `sensor.<key>_我的优惠券` | 我的优惠券数量 |
+| `sensor.<key>_进行中活动` | 进行中活动数 |
+| `sensor.<key>_进行中订单` | 进行中订单数 |
 
 #### 🌤️ 百度地图（5 个）
 
 | 传感器 | 说明 |
 |--------|------|
-| `sensor.life_hub_<key>_temperature` | 当前温度 |
-| `sensor.life_hub_<key>_weather` | 天气状况 |
-| `sensor.life_hub_<key>_humidity` | 湿度 |
-| `sensor.life_hub_<key>_wind_speed` | 风力 |
-| `sensor.life_hub_<key>_wind_direction` | 风向 |
+| `sensor.<key>_温度` | 当前温度 |
+| `sensor.<key>_天气状况` | 天气状况 |
+| `sensor.<key>_湿度` | 湿度 |
+| `sensor.<key>_风力` | 风力 |
+| `sensor.<key>_风向` | 风向 |
 
 #### 🛵 美团（2 个）
 
 | 传感器 | 说明 |
 |--------|------|
-| `sensor.life_hub_<key>_travel_order_count` | 旅行订单数量 |
-| `sensor.life_hub_<key>_coupon_count` | 优惠券数量 |
+| `sensor.<key>_优惠券数量` | 优惠券数量 |
+| `sensor.<key>_连接状态` | 连接状态 |
 
 ---
 
@@ -203,7 +250,7 @@ trigger:
 action:
   - service: life_hub.yiming_call_tool
     data:
-      tool: receive_all_coupons
+      tool: claim_all
 ```
 
 ### 麦当劳自动领券
@@ -212,7 +259,7 @@ action:
 alias: 麦当劳自动领券
 trigger:
   - platform: numeric_state
-    entity_id: sensor.life_hub_mcdonalds_available_coupons
+    entity_id: sensor.mai_dang_lao_ke_ling_you_hui_quan
     above: 0
 action:
   - service: life_hub.mcdonalds_call_tool
@@ -220,7 +267,7 @@ action:
       tool: auto-bind-coupons
 ```
 
-### 天气提醒
+### 天气播报
 
 ```yaml
 alias: 百度天气播报
@@ -231,8 +278,8 @@ action:
   - service: tts.baidu_say
     data:
       message: >
-        今天天气 {{ states('sensor.life_hub_baidu_weather') }}，
-        温度 {{ states('sensor.life_hub_baidu_temperature') }}°C
+        今天天气 {{ states('sensor.tian_qi_zhuang_kuang') }}，
+        温度 {{ states('sensor.wen_du') }}°C
 ```
 
 ---
@@ -242,11 +289,11 @@ action:
 同一服务可以添加多个子条目（如倪一可+陈朵朵两个一鸣账号）：
 
 ```yaml
-# 操作陈朵朵的账号
+# 操作陈朵朵的账号（选择设备）
 service: life_hub.yiming_call_tool
 data:
   tool: get_balance
-  subentry_id: "01JXxxxxxxxxxxxx"  # 在配置页查看子条目ID
+  target_device: "device_id..."
 ```
 
 ```yaml
@@ -294,9 +341,11 @@ custom_components/life_hub/
 ## ⚠️ 注意事项
 
 1. **Token 安全**：部分 API Token 有调用次数限制，请合理使用
-2. **多账号**：同一服务可添加多个子条目，服务调用时通过 `subentry_id` 区分
-3. **服务命名**：所有服务统一为 `{provider}_call_tool`，参数统一为 `tool` + `params` + `subentry_id`
-4. **频率限制**：部分上游 API 有调用频率限制（如滴滴每5小时1000次）
+2. **多账号**：同一服务可添加多个子条目，服务调用时通过 `target_device` / `subentry_id` 区分
+3. **服务命名**：所有服务统一为 `{provider}_call_tool`，参数统一为 `tool` + `params` + 辅助字段
+4. **传感器自动刷新**：领券/下单等操作后，关联传感器会自动刷新（无需等待30分钟周期）
+5. **频率限制**：部分上游 API 有调用频率限制（如滴滴每5小时1000次）
+6. **默认地址**：在集成选项中设置的地址会自动用于配送和天气查询
 
 ---
 

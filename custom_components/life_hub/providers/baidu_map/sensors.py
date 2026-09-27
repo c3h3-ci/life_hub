@@ -52,11 +52,18 @@ class BaiduMapWeatherCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed("Baidu Map client not available")
 
         try:
-            # Use HA location for weather
-            lat = self.hass.config.latitude
-            lng = self.hass.config.longitude
-            location = f"{lat},{lng}" if lat and lng else ""
-            data = await client.weather(location=location)
+            # Check life_hub options first (city name or lat,lng), fallback to HA coords
+            location = ""
+            entries = self.hass.config_entries.async_entries(DOMAIN)
+            if entries:
+                addr = entries[0].options.get("address", "") or ""
+                if addr:
+                    location = addr
+            if not location:
+                lat = self.hass.config.latitude
+                lng = self.hass.config.longitude
+                location = f"{lat},{lng}" if lat and lng else ""
+            data = await client.weather(region=location)
             # Parse Agent Plan weather response
             return _parse_weather(data)
         except Exception as err:
@@ -76,11 +83,20 @@ def _parse_weather(data: dict) -> dict[str, Any]:
         info = data
 
     if isinstance(info, dict):
-        result["temperature"] = info.get("temperature") or info.get("temp")
-        result["condition"] = info.get("condition") or info.get("weather") or info.get("text")
-        result["humidity"] = info.get("humidity") or info.get("rh")
-        result["wind_power"] = info.get("wind_power") or info.get("windSpeed") or info.get("wind")
-        result["wind_direction"] = info.get("wind_direction") or info.get("windDir")
+        # The actual weather data is nested inside "now" key
+        if "now" in info:
+            now = info["now"]
+            result["temperature"] = now.get("temp")
+            result["condition"] = now.get("text")
+            result["humidity"] = now.get("rh")
+            result["wind_power"] = now.get("wind_class")
+            result["wind_direction"] = now.get("wind_dir")
+        else:
+            result["temperature"] = info.get("temperature") or info.get("temp")
+            result["condition"] = info.get("condition") or info.get("weather") or info.get("text")
+            result["humidity"] = info.get("humidity") or info.get("rh")
+            result["wind_power"] = info.get("wind_power") or info.get("windSpeed") or info.get("wind")
+            result["wind_direction"] = info.get("wind_direction") or info.get("windDir")
 
     # Remove None values
     return {k: v for k, v in result.items() if v is not None}

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import voluptuous as vol
+import aiohttp
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 
@@ -33,66 +34,117 @@ from .const import DOMAIN
 _current_hass: HomeAssistant | None = None
 
 
-def _get_provider_client(hass: HomeAssistant, provider_type: str, subentry_id: str | None = None):
-    """Get client for a specific provider type via O(1) lookup.
-    
-    If subentry_id is given, return the exact match; otherwise return the first one.
+def _get_provider_client(hass: HomeAssistant, provider_type: str,
+                         subentry_id: str | None = None,
+                         entity_id: str | None = None,
+                         device_id: str | None = None):
+    """Get client for a specific provider type.
+
+    Supports four lookup modes (in priority order):
+      1. entity_id → resolve to config_subentry_id → match client
+      2. device_id → resolve to config_subentry_id → match client
+      3. subentry_id → direct match
+      4. no filter → return first available client
     """
+    # Priority 1: entity_id → resolve to subentry_id
+    if entity_id and not subentry_id:
+        subentry_id = _resolve_subentry_id(hass, entity_id)
+    # Priority 2: device_id → resolve to subentry_id
+    if device_id and not subentry_id:
+        subentry_id = _resolve_device_id(hass, device_id)
+
     client_map = hass.data.get(DOMAIN, {}).get("client_map", {})
     for key, (client, rt) in client_map.items():
-        if key.startswith(f"{provider_type}:"):
-            if subentry_id is None or rt.subentry_id == subentry_id:
-                return client, rt
-    # Fallback: iterate entries (safe for edge cases)
+        if not key.startswith(f"{provider_type}:"):
+            continue
+        if subentry_id is None or rt.subentry_id == subentry_id:
+            return client, rt
+    # Fallback
     for entry in hass.config_entries.async_entries(DOMAIN):
         runtime = getattr(entry, "runtime_data", None)
         if runtime is None:
             continue
         for key, rt in runtime.providers.items():
-            if key.startswith(f"{provider_type}:") and hasattr(rt, "client"):
-                if subentry_id is None or rt.subentry_id == subentry_id:
-                    return rt.client, rt
+            if not key.startswith(f"{provider_type}:") or not hasattr(rt, "client"):
+                continue
+            if subentry_id is None or rt.subentry_id == subentry_id:
+                return rt.client, rt
     raise HomeAssistantError(f"未找到 {provider_type} 集成")
 
 
-def _make_dispatch_handler(provider: str):
-    """Factory: create a handler that dispatches ``client.{tool}(**params)``.
+def _resolve_subentry_id(hass: HomeAssistant, entity_id: str) -> str | None:
+    """Resolve an entity_id to its config_subentry_id via entity registry."""
+    er = hass.data.get("entity_registry")
+    if er is None:
+        from homeassistant.helpers import entity_registry as er_mod
+        er = er_mod.async_get(hass)
+    entry = er.async_get(entity_id)
+    if entry:
+        return entry.config_subentry_id
+    return None
 
-    Expected service call data: ``{"tool": "...", "params": {...}}``.
-    """
-    async def handler(call: ServiceCall) -> Any:
+
+def _resolve_device_id(hass: HomeAssistant, device_id: str) -> str | None:
+    """Resolve a device_id to its first non-None subentry_id via device registry."""
+    from homeassistant.helpers import device_registry as dr_mod
+    dreg = dr_mod.async_get(hass)
+    device = dreg.async_get(device_id)
+    if device is None:
+        return None
+    # Find the EID and extract first non-None subentry
+    for eid, subentry_set in device.config_entries_subentries.items():
+        for sid in subentry_set:
+            if sid is not None:
+                return sid
+    return None
+
+
+def _ensure_dict(result: Any) -> dict:
+    """Wrap non-dict results in a dict so HA doesn't reject the return_response."""
+    if result is None:
+        return {}
+    if isinstance(result, dict):
+        return result
+    return {"result": result}
+
+
+def _make_dispatch_handler(provider: str):
+    """Factory: create a handler that dispatches ``client.{tool}(**params)``."""
+    async def handler(call: ServiceCall) -> dict:
         sid = call.data.get("subentry_id")
-        client, _ = _get_provider_client(_current_hass, provider, subentry_id=sid)
+        eid = call.data.get("target_entity")
+        did = call.data.get("target_device")
+        client, _ = _get_provider_client(_current_hass, provider, subentry_id=sid, entity_id=eid, device_id=did)
         tool = call.data["tool"]
         params = call.data.get("params", {})
         try:
             fn = getattr(client, tool)
             result = await fn(**params)
-            return result or {}
-        except TypeError as err:
-            _LOGGER.warning("_make_dispatch_handler %s.%s failed: %s", provider, tool, err)
-            raise HomeAssistantError(f"Provider {provider} tool {tool} failed: {err}") from err
+            return _ensure_dict(result)
+        except (TypeError, ValueError, aiohttp.ClientError, Exception) as err:
+            msg = f"{type(err).__name__}: {err}"
+            _LOGGER.warning("_make_dispatch_handler %s.%s failed: %s", provider, tool, msg)
+            raise HomeAssistantError(f"Provider {provider} tool {tool} failed: {msg}") from err
     return handler
 
 
 def _make_mcp_handler(provider: str):
-    """Factory: create a handler for MCP providers (client.call_tool).
-
-    Expected service call data: ``{"tool": "...", "params": {...}}``.
-    Maps unified ``{tool, params}`` to ``client.call_tool(tool_name, arguments)``.
-    """
-    async def handler(call: ServiceCall) -> Any:
+    """Factory: create a handler for MCP providers (client.call_tool)."""
+    async def handler(call: ServiceCall) -> dict:
         sid = call.data.get("subentry_id")
-        client, _ = _get_provider_client(_current_hass, provider, subentry_id=sid)
+        eid = call.data.get("target_entity")
+        did = call.data.get("target_device")
+        client, _ = _get_provider_client(_current_hass, provider, subentry_id=sid, entity_id=eid, device_id=did)
         tool = call.data["tool"]
         params = call.data.get("params", {})
         if isinstance(params, str):
             params = json.loads(params)
         try:
             result = await client.call_tool(tool, params)
-            return result or {}
-        except TypeError as err:
-            _LOGGER.warning("_make_mcp_handler %s.%s failed: %s", provider, tool, err)
+            return _ensure_dict(result)
+        except (TypeError, ValueError, aiohttp.ClientError, Exception) as err:
+            msg = f"{type(err).__name__}: {err}"
+            _LOGGER.warning("_make_mcp_handler %s.%s failed: %s", provider, tool, msg)
             raise HomeAssistantError(f"Provider {provider} tool {tool} failed: {err}") from err
     return handler
 
@@ -106,13 +158,44 @@ def _parse_json_list(raw: str | list) -> list:
     return json.loads(raw) if isinstance(raw, str) else raw
 
 
+def _get_life_hub_address(hass: HomeAssistant) -> str:
+    """Get life_hub default address from options (city name or lat,lng), or empty."""
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if entries:
+        return entries[0].options.get("address", "") or ""
+    return ""
+
+
 def _get_lng_lat(hass: HomeAssistant) -> tuple[float, float]:
-    """Get location from HA config, returns (lng, lat) or (0, 0)."""
+    """Get location from life_hub options or HA system config, returns (lng, lat) or (0, 0)."""
+    addr = _get_life_hub_address(hass)
+    if addr and "," in addr:
+        parts = addr.split(",", 1)
+        try:
+            lat = float(parts[0].strip())
+            lng = float(parts[1].strip())
+            if lat and lng:
+                return lng, lat
+        except (TypeError, ValueError):
+            pass
+    # Fallback to HA system config
     lat = hass.config.latitude
     lng = hass.config.longitude
     if lat and lng:
         return float(lng), float(lat)
     return 0.0, 0.0
+
+
+def _refresh_provider_coordinator(provider_key: str) -> None:
+    """Trigger coordinator refresh for a provider after data-changing service calls."""
+    coords = _current_hass.data.get(DOMAIN, {}).get("coordinators", {})
+    coord = coords.get(provider_key)
+    if coord:
+        _current_hass.async_create_task(coord.async_refresh())
+    # Also refresh health coordinator
+    health = coords.get(f"health_{provider_key}")
+    if health:
+        _current_hass.async_create_task(health.async_refresh())
 
 
 async def _get_location(hass: HomeAssistant) -> tuple[float, float] | None:
@@ -132,6 +215,8 @@ async def _handle_yiming(call: ServiceCall) -> Any:
     """Dispatch yiming API calls via tool+params."""
     tool = call.data["tool"]
     sid = call.data.get("subentry_id")
+    eid = call.data.get("target_entity")
+    did = call.data.get("target_device")
 
     # Special: claim_all iterates over all yiming accounts
     if tool == "claim_all":
@@ -145,9 +230,14 @@ async def _handle_yiming(call: ServiceCall) -> Any:
                 results[key] = {"status": "ok", "result": result.get("msg", "ok")}
             except Exception as err:
                 results[key] = {"status": "error", "error": str(err)}
+        # Refresh all yiming coordinators after batch claim
+        coords = _current_hass.data.get(DOMAIN, {}).get("coordinators", {})
+        for ck in coords:
+            if ck.startswith("yiming:"):
+                _current_hass.async_create_task(coords[ck].async_refresh())
         return results
 
-    client, rt = _get_provider_client(_current_hass, "yiming", subentry_id=sid)
+    client, rt = _get_provider_client(_current_hass, "yiming", subentry_id=sid, entity_id=eid, device_id=did)
     params = call.data.get("params", {})
 
     def _lat():
@@ -196,7 +286,12 @@ async def _handle_yiming(call: ServiceCall) -> Any:
             pay_type=params.get("pay_type", 1),
             mobile=params.get("mobile", ""),
             remark=params.get("remark", ""),
-            longitude=params.get("longitude"), latitude=params.get("latitude"),
+            longitude=params.get("longitude") if params.get("longitude") is not None else (
+                _get_lng_lat(_current_hass)[0] if params.get("order_type", "1") != "1" else None
+            ),
+            latitude=params.get("latitude") if params.get("latitude") is not None else (
+                _get_lng_lat(_current_hass)[1] if params.get("order_type", "1") != "1" else None
+            ),
         ),
         # 优惠券
         "receive_all_coupons": lambda: client.receive_all_coupons(),
@@ -208,24 +303,254 @@ async def _handle_yiming(call: ServiceCall) -> Any:
     fn = _DISPATCH.get(tool)
     if fn is None:
         raise HomeAssistantError(f"未知的一鸣 API 方法: {tool}")
-    return await fn()
+    result = _ensure_dict(await fn())
+    _refresh_provider_coordinator(f"yiming:{rt.subentry_id}")
+    return result
 
 
 async def _handle_meituan(call: ServiceCall) -> dict:
     """Dispatch meituan API calls via tool+params."""
     sid = call.data.get("subentry_id")
-    client, _ = _get_provider_client(_current_hass, "meituan", subentry_id=sid)
-    return await client.call_method(call.data["tool"], call.data.get("params", {})) or {}
+    eid = call.data.get("target_entity")
+    did = call.data.get("target_device")
+    client, rt = _get_provider_client(_current_hass, "meituan", subentry_id=sid, entity_id=eid, device_id=did)
+    params = call.data.get("params", {})
+    tool = call.data["tool"]
+    # Address fallback for delivery orders
+    if tool in ("submit_order", "preview_order"):
+        addr = _get_life_hub_address(_current_hass)
+        if addr:
+            recipient = params.get("recipient", {})
+            if isinstance(recipient, dict) and not recipient.get("address"):
+                recipient["address"] = addr
+                params["recipient"] = recipient
+    result = await client.call_method(tool, params)
+    _refresh_provider_coordinator(f"meituan:{rt.subentry_id}")
+    return _ensure_dict(result)
+
+
+async def _handle_meituan_paotui(call: ServiceCall) -> dict:
+    """Dispatch meituan paotui API calls."""
+    sid = call.data.get("subentry_id")
+    eid = call.data.get("target_entity")
+    did = call.data.get("target_device")
+    client, rt = _get_provider_client(_current_hass, "meituan_paotui", subentry_id=sid, entity_id=eid, device_id=did)
+    params = call.data.get("params", {})
+    tool = call.data["tool"]
+    if tool in ("submit_order", "preview_order"):
+        addr = _get_life_hub_address(_current_hass)
+        if addr:
+            recipient = params.get("recipient", {})
+            if isinstance(recipient, dict) and not recipient.get("address"):
+                recipient["address"] = addr
+                params["recipient"] = recipient
+    result = await client.call_method(tool, params)
+    _refresh_provider_coordinator(f"meituan_paotui:{rt.subentry_id}")
+    return _ensure_dict(result)
 
 
 async def _handle_mcdonalds(call: ServiceCall) -> dict:
-    """McDonald's MCP call_tool."""
+    """McDonald's MCP call_tool with store name resolution + product filter.
+
+    - ``store`` (str, optional): Chinese store name (e.g. "福田高铁站") or
+      numeric store code. If text, auto-resolves via ``query-nearby-stores``.
+    - ``product`` (str, optional): Filter meals by name (case-insensitive).
+    """
     sid = call.data.get("subentry_id")
-    client, _ = _get_provider_client(_current_hass, "mcdonalds", subentry_id=sid)
+    eid = call.data.get("target_entity")
+    did = call.data.get("target_device")
+    client, rt = _get_provider_client(_current_hass, "mcdonalds", subentry_id=sid, entity_id=eid, device_id=did)
+
+    tool = call.data["tool"]
     params = call.data.get("params", {})
     if isinstance(params, str):
         params = json.loads(params)
-    return await client.call_tool(call.data["tool"], params) or {}
+
+    # ── store name → storeCode resolution ─────────────────────────────
+    store = call.data.get("store")
+    if store and "storeCode" not in params:
+        if store.isdigit():
+            params["storeCode"] = store
+            _LOGGER.debug("mcdonalds: using numeric storeCode=%s", store)
+        else:
+            # Chinese store name → call query-nearby-stores to resolve
+            try:
+                city = getattr(_current_hass.config, "city", None) or \
+                       getattr(_current_hass.config, "location_name", "") or ""
+                nearby_resp = await client.call_tool("query-nearby-stores", {
+                    "beType": 1,
+                    "searchType": 2,
+                    "keyword": store,
+                    "city": city,
+                })
+                sc = nearby_resp.get("result", {}).get("structuredContent") or nearby_resp
+                store_list = (sc or {}).get("data", [])
+                if store_list:
+                    params["storeCode"] = str(store_list[0].get("storeCode", ""))
+                    _LOGGER.info("Resolved store '%s' → code=%s", store, params["storeCode"])
+                else:
+                    raise HomeAssistantError(f"未找到门店: {store}")
+            except HomeAssistantError:
+                raise
+            except Exception as err:
+                raise HomeAssistantError(f"门店解析失败: {err}") from err
+
+    # ── address fallback: use life_hub default for delivery create ──
+    if tool in ("delivery-create-address", "create-order") and not params.get("address"):
+        addr = _get_life_hub_address(_current_hass)
+        if addr:
+            if tool == "delivery-create-address":
+                params.setdefault("address", addr)
+            elif tool == "create-order":
+                params.setdefault("address", addr)
+
+    # ── call the actual MCP tool ──────────────────────────────────────
+    result = await client.call_tool(tool, params)
+
+    # ── trigger coordinator refresh after coupon operations ──────────
+    if tool in ("auto-bind-coupons", "available-coupons", "query-my-coupons"):
+        coordinators = _current_hass.data.get(DOMAIN, {}).get("coordinators", {})
+        for ck, coord in coordinators.items():
+            if ck.startswith("mcdonalds:"):
+                _current_hass.async_create_task(coord.async_refresh())
+
+    # ── product name filter (only for query-meals) ────────────────────
+    product = call.data.get("product")
+    if product and tool == "query-meals":
+        sc = result.get("result", {}).get("structuredContent")
+        if isinstance(sc, dict):
+            data = sc.get("data", {})
+            meals_map = data.get("meals", {})
+            categories = data.get("categories", [])
+            filtered_cats = []
+            for cat in categories:
+                meals = cat.get("meals", [])
+                keep = [m for m in meals
+                        if product.lower() in meals_map.get(m.get("code", ""), {})
+                        .get("name", "").lower()]
+                if keep:
+                    cat["meals"] = keep
+                    filtered_cats.append(cat)
+            data["categories"] = filtered_cats
+            _LOGGER.debug("mcdonalds: product filter '%s' → %d categories", product, len(filtered_cats))
+
+    _refresh_provider_coordinator(f"mcdonalds:{rt.subentry_id}")
+    return _ensure_dict(result)
+
+
+# ═══════════════════════════════════════════════════════════
+# 酒店比价 — 跨平台查询同一酒店价格并汇总对比
+# ═══════════════════════════════════════════════════════════
+
+async def _handle_compare_hotel_price(call: ServiceCall) -> dict:
+    """查询携程/飞猪/美团旅游三家平台的酒店价格并汇总对比。
+    支持纯文本查询（query）或结构化字段（city/hotel/landmark/room_type）。
+    """
+    hass = _current_hass
+    query = call.data.get("query", "")
+    city = call.data.get("city", "")
+    hotel = call.data.get("hotel", "")
+    landmark = call.data.get("landmark", "")
+    room_type = call.data.get("room_type", "标准双人房")
+    today = "2026-07-20"
+    check_in = call.data.get("check_in") or today
+    check_out = call.data.get("check_out") or "2026-07-21"
+
+    # 优先用 query，没有则从结构化字段拼装
+    if query:
+        query_text = query
+        keyword = query
+    else:
+        keyword = hotel or landmark or city
+        query_text = f"{city}{keyword}{room_type}{check_in}入住{check_out}退房多少钱"
+
+    results: dict[str, Any] = {"query": query_text, "prices": {}}
+
+    # ── 1. 携程：精确房型价格 ──
+    ctrip_client = _get_provider_client(hass, "ctrip")
+    if ctrip_client and ctrip_client[0]:
+        try:
+            resp = await ctrip_client[0].query(query_text)
+            results["prices"]["携程"] = {"status": "ok", "data": str(resp)[:1000]}
+        except Exception as err:
+            results["prices"]["携程"] = {"status": "error", "error": str(err)}
+
+    # ── 2. 飞猪：fast_search 拿起价 ──
+    fliggy_client = _get_provider_client(hass, "fliggy")
+    if fliggy_client and fliggy_client[0]:
+        try:
+            resp = await fliggy_client[0].fast_search(query_text)
+            results["prices"]["飞猪"] = {"status": "ok", "data": str(resp)[:1000]}
+        except Exception as err:
+            results["prices"]["飞猪"] = {"status": "error", "error": str(err)}
+
+    # ── 3. 美团旅游：房型详情 ──
+    mt_client = _get_provider_client(hass, "meituan_travel")
+    if mt_client and mt_client[0]:
+        try:
+            resp = await mt_client[0]._query(city or "北京", f"搜索酒店：{query_text}")
+            results["prices"]["美团旅游"] = {"status": "ok", "data": str(resp)[:1000]}
+        except Exception as err:
+            results["prices"]["美团旅游"] = {"status": "error", "error": str(err)}
+
+    return results
+
+
+# ═══════════════════════════════════════════════════════════
+# 统一自然语言查询 — 选择平台一把查
+# ═══════════════════════════════════════════════════════════
+
+_NL_PLATFORMS: dict[str, tuple[str, str, str]] = {
+    "携程": ("ctrip", "query", ""),
+    "飞猪": ("fliggy", "fast_search", ""),
+    "美团旅游": ("meituan_travel", "_query", ""),
+    "百度地图": ("baidu_map", "search_poi", ""),
+    "高德": ("gaode", "search_poi", ""),
+}
+
+async def _handle_unified_query(call: ServiceCall) -> dict:
+    """统一自然语言查询，可选择单个或多个平台。"""
+    hass = _current_hass
+    query = call.data.get("query", "")
+    raw_platforms = call.data.get("platforms", "")
+    region = call.data.get("region", "全国")
+
+    # 解析平台选择（支持多选列表 或 旧版逗号分隔字符串）
+    if isinstance(raw_platforms, list):
+        selected = [p.strip() for p in raw_platforms if p.strip()]
+    elif isinstance(raw_platforms, str) and raw_platforms.strip():
+        selected = [p.strip() for p in raw_platforms.replace("，", ",").split(",") if p.strip()]
+    else:
+        selected = list(_NL_PLATFORMS.keys())
+
+    results: dict[str, Any] = {"query": query, "platforms": selected, "results": {}}
+
+    for name in selected:
+        spec = _NL_PLATFORMS.get(name)
+        if not spec:
+            results["results"][name] = {"status": "error", "error": f"未知平台: {name}"}
+            continue
+        provider_key, tool_name, _ = spec
+        client = _get_provider_client(hass, provider_key)
+        if not client or not client[0]:
+            results["results"][name] = {"status": "error", "error": f"{name}未配置"}
+            continue
+        try:
+            if tool_name == "query":
+                resp = await client[0].query(query)
+            elif tool_name == "fast_search":
+                resp = await client[0].fast_search(query)
+            elif tool_name == "_query":
+                resp = await client[0]._query(region, query)
+            elif tool_name == "search_poi":
+                resp = await client[0].search_poi(query, region)
+            else:
+                resp = {}
+            results["results"][name] = {"status": "ok", "data": str(resp)[:800]}
+        except Exception as err:
+            results["results"][name] = {"status": "error", "error": str(err)[:200]}
+
+    return results
 
 
 # ═══════════════════════════════════════════════════════════
@@ -258,6 +583,8 @@ _SERVICES: list[_Svc] = [
         ]),
         vol.Optional("params", default={}): dict,
         vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
     })),
     # ── Fliggy ──
     _Svc("fliggy_call_tool", _make_dispatch_handler("fliggy"), vol.Schema({
@@ -268,54 +595,82 @@ _SERVICES: list[_Svc] = [
         ]),
         vol.Optional("params", default={}): dict,
         vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
     })),
     # ── Ctrip ──
     _Svc("ctrip_call_tool", _make_dispatch_handler("ctrip"), vol.Schema({
         vol.Required("tool"): vol.In(["query", "search_hotel"]),
         vol.Optional("params", default={}): dict,
         vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
     })),
     # ── McDonald's ──
     _Svc("mcdonalds_call_tool", _handle_mcdonalds, vol.Schema({
         vol.Required("tool"): str,
         vol.Optional("params", default={}): vol.Any(str, dict),
+        vol.Optional("store"): str,
+        vol.Optional("product"): str,
         vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
     })),
     # ── Baidu Maps ──
     _Svc("baidu_map_call_tool", _make_dispatch_handler("baidu_map"), vol.Schema({
         vol.Required("tool"): vol.In(["search_poi", "geocode", "reverse_geocode"]),
         vol.Optional("params", default={}): dict,
         vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
     })),
     # ── Meituan ──
     _Svc("meituan_call_tool", _handle_meituan, vol.Schema({
         vol.Required("tool"): str,
         vol.Optional("params", default={}): dict,
         vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
+    })),
+    # ── Meituan Paotui ──
+    _Svc("meituan_paotui_call_tool", _handle_meituan_paotui, vol.Schema({
+        vol.Required("tool"): str,
+        vol.Optional("params", default={}): dict,
+        vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
     })),
     # ── Meituan Travel ──
     _Svc("meituan_travel_call_tool", _make_dispatch_handler("meituan_travel"), vol.Schema({
         vol.Required("tool"): vol.In([
-            "search_hotel", "search_flight", "search_train", "search_poi",
+            "query", "search_hotel", "search_flight", "search_train", "search_poi",
             "plan_itinerary", "get_travel_orders",
         ]),
         vol.Optional("params", default={}): dict,
         vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
     })),
     # ── Gaode ──
     _Svc("gaode_call_tool", _make_dispatch_handler("gaode"), vol.Schema({
         vol.Required("tool"): vol.In([
-            "search_poi", "search_poi_nearby", "geocode", "reverse_geocode",
+            "search_poi", "search_poi_detail", "search_poi_nearby",
+            "route_planning", "travel_plan",
+            "geocode", "reverse_geocode",
             "get_distance", "calculate_distance", "check_in_polygon",
         ]),
         vol.Optional("params", default={}): dict,
         vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
     })),
     # ── Music ──
     _Svc("music_call_tool", _make_dispatch_handler("music"), vol.Schema({
         vol.Required("tool"): vol.In(["search_songs", "get_playlist", "get_ranking"]),
         vol.Optional("params", default={}): dict,
         vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
     })),
     # ── Didi ──
     _Svc("didi_call_tool", _make_mcp_handler("didi"), vol.Schema({
@@ -328,6 +683,36 @@ _SERVICES: list[_Svc] = [
         ]),
         vol.Optional("params", default={}): dict,
         vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
+    })),
+    # ── Luckin Coffee ──
+    _Svc("luckin_call_tool", _make_mcp_handler("luckin"), vol.Schema({
+        vol.Required("tool"): vol.In([
+            "queryShopList", "searchProductForMcp", "switchProduct",
+            "queryProductDetailInfo", "previewOrder", "createOrder",
+            "queryOrderDetailInfo", "cancelOrder",
+        ]),
+        vol.Optional("params", default={}): dict,
+        vol.Optional("subentry_id"): str,
+        vol.Optional("target_entity"): str,
+        vol.Optional("target_device"): str,
+    })),
+    # ── 酒店比价 ──
+    _Svc("compare_hotel_price", _handle_compare_hotel_price, vol.Schema({
+        vol.Optional("query", default=""): str,
+        vol.Optional("city", default=""): str,
+        vol.Optional("hotel", default=""): str,
+        vol.Optional("landmark", default=""): str,
+        vol.Optional("room_type", default="标准双人房"): str,
+        vol.Optional("check_in", default=""): str,
+        vol.Optional("check_out", default=""): str,
+    })),
+    # ── 统一自然语言查询 ──
+    _Svc("unified_query", _handle_unified_query, vol.Schema({
+        vol.Required("query"): str,
+        vol.Optional("platforms", default=""): vol.Any(str, [str]),
+        vol.Optional("region", default="全国"): str,
     })),
 ]
 

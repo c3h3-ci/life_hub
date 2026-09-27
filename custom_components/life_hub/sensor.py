@@ -112,6 +112,9 @@ async def async_setup_entry(
         await _safe_first_refresh(coordinator, f"health_{provider_key}")
         status_sensor = ProviderStatusSensor(entry, provider_key, provider_rt, coordinator)
         entities: list[SensorEntity] = [status_sensor]
+        # Store health coordinator for on-demand refresh from services
+        coords = hass.data.setdefault(DOMAIN, {}).setdefault("coordinators", {})
+        coords[f"health_{provider_key}"] = coordinator
 
         if provider_rt.subentry_type == "yiming":
             from .providers.yiming.api import YimingApi
@@ -120,30 +123,35 @@ async def async_setup_entry(
                 yc = LifeHubDataCoordinator(hass, provider_rt)
                 await _safe_first_refresh(yc, f"yiming_data_{provider_key}")
                 entities.extend(build_yiming(entry, provider_key, provider_rt, yc))
+                coords[provider_key] = yc
 
         if provider_rt.subentry_type == "mcdonalds":
             from .providers.mcdonalds.sensors import McdonaldsDataCoordinator, build_sensors as build_mcd
             mc = McdonaldsDataCoordinator(hass, provider_rt)
             await _safe_first_refresh(mc, f"mcdonalds_data_{provider_key}")
             entities.extend(build_mcd(entry, provider_key, provider_rt, mc))
+            coords[provider_key] = mc
 
         if provider_rt.subentry_type == "meituan":
             from .providers.meituan.sensors import MeituanDataCoordinator, build_sensors as build_mt
             mc = MeituanDataCoordinator(hass, provider_rt)
             await _safe_first_refresh(mc, f"meituan_data_{provider_key}")
             entities.extend(build_mt(entry, provider_key, provider_rt, mc))
+            coords[provider_key] = mc
 
         if provider_rt.subentry_type == "baidu_map":
             from .providers.baidu_map.sensors import BaiduMapWeatherCoordinator, build_sensors as build_bm
             bmc = BaiduMapWeatherCoordinator(hass, provider_rt)
             await _safe_first_refresh(bmc, f"baidu_map_{provider_key}")
             entities.extend(build_bm(entry, provider_key, provider_rt, bmc))
+            coords[provider_key] = bmc
 
         if provider_rt.subentry_type == "didi":
             from .providers.didi.sensors import DidiDataCoordinator, build_sensors as build_didi
             dc = DidiDataCoordinator(hass, provider_rt)
             await _safe_first_refresh(dc, f"didi_data_{provider_key}")
             entities.extend(build_didi(entry, provider_key, provider_rt, dc))
+            coords[provider_key] = dc
 
         async_add_entities(entities, True, config_subentry_id=provider_rt.subentry_id)
 

@@ -1,66 +1,65 @@
 # Life Hub Services — 统一命名规范
 # 所有服务格式: {provider}_call_tool
-# 参数统一: tool + params + subentry_id
+# 参数统一: tool + params + target_entity(选择账号传感器) + subentry_id
 
 # ========== Yiming (一鸣) ==========
 
 yiming_call_tool:
   name: 一鸣 API
-  description: "通过 tool 选择功能，params 传参数。可选 tool: get_balance, get_member_info, get_coupon_sum, get_integral, claim_all 等 37 种"
+  description: 查询余额/积分/优惠券/订单等。选择下方账号传感器可指定操作哪个一鸣账号
   fields:
     tool:
-      name: 工具
-      description: 选择要调用的 API 方法
+      name: 功能
+      description: 选择要调用的功能
       required: true
       selector:
         select:
           options:
-            - "get_balance"
-            - "get_member_info"
-            - "get_coupon_sum"
-            - "get_integral"
-            - "get_user_info"
-            - "get_app_notice"
-            - "get_coupon_pools"
-            - "get_orders"
-            - "get_my_coupons"
-            - "get_integral_detail"
-            - "get_recharge_list"
-            - "get_app_equity"
-            - "get_user_info_v2"
-            - "get_qrcode"
-            - "get_order"
-            - "get_transaction_details"
-            - "get_default_address"
-            - "get_nearest_store"
-            - "get_menu"
-            - "get_sku_info"
-            - "search_stores"
-            - "get_delivery_time"
-            - "get_nearby_addresses"
-            - "get_store_info"
-            - "get_region_list"
-            - "get_current_city"
-            - "query_nearly_store"
-            - "query_nearly_store_by_distance"
-            - "get_nearly_store_one_km"
-            - "calculate_cart"
-            - "pre_create_order"
-            - "submit_order"
-            - "receive_all_coupons"
-            - "receive_coupon"
-            - "claim_all"
-            - "collect_store_query"
-            - "collect_store_create"
+            - label: "查询余额"
+              value: "get_balance"
+            - label: "会员信息"
+              value: "get_member_info"
+            - label: "优惠券汇总"
+              value: "get_coupon_sum"
+            - label: "积分查询"
+              value: "get_integral"
+            - label: "积分明细"
+              value: "get_integral_detail"
+            - label: "最近订单"
+              value: "get_orders"
+            - label: "我的优惠券"
+              value: "get_my_coupons"
+            - label: "领取所有可领券"
+              value: "receive_all_coupons"
+            - label: "批量领所有账号券"
+              value: "claim_all"
+            - label: "充值记录"
+              value: "get_recharge_list"
+            - label: "交易明细"
+              value: "get_transaction_details"
+            - label: "用户信息"
+              value: "get_user_info"
+            - label: "最近门店"
+              value: "get_nearest_store"
+            - label: "搜索门店"
+              value: "search_stores"
     params:
       name: 参数
-      description: 工具参数（JSON对象），根据 tool 不同传入不同参数
+      description: "工具参数（JSON格式）。常见示例：get_balance → {}，get_orders → {\"page\":1,\"pageSize\":10}"
       required: false
+      default: "{}"
       selector:
         object:
+    target_device:
+      name: 选择账号
+      description: 选择一个一鸣设备来指定操作哪个账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
     subentry_id:
-      name: 子条目ID
-      description: 指定操作哪个账号（多账号时使用，留空操作第一个）
+      name: 或输入子条目ID
+      description: 留空自动选择第一个账号
       required: false
       selector:
         text:
@@ -69,32 +68,39 @@ yiming_call_tool:
 
 fliggy_call_tool:
   name: 飞猪 API
-  description: "通过 tool 选择功能，params 传参数。可选 tool: fast_search, search_flight, search_hotel, search_train 等"
+  description: 全品类旅行搜索预订。查酒店优先用 fast_search（自然语言），search_hotel 的结构化参数对县级市(如乐清)geocode不准。fast_search → {"query":"乐清亚朵酒店标准双人房今晚价格"}
   fields:
     tool:
-      name: 工具
-      description: 选择要调用的功能
+      name: 功能
       required: true
       selector:
         select:
           options:
-            - "fast_search"
-            - "ai_search"
-            - "search_flight"
-            - "search_hotel"
-            - "search_train"
-            - "search_poi"
-            - "search_marriott_hotel"
-            - "search_marriott_package"
+            - label: "快速搜索"
+              value: "fast_search"
+            - label: "搜索机票"
+              value: "search_flight"
+            - label: "搜索酒店"
+              value: "search_hotel"
+            - label: "搜索火车票"
+              value: "search_train"
+            - label: "搜索景点"
+              value: "search_poi"
     params:
       name: 参数
-      description: "工具参数（JSON对象）。例如 search_flight 需要 {\"origin\": \"北京\", \"destination\": \"上海\", \"dep_date\": \"2026-08-01\"}"
+      description: "JSON格式。县级市查酒店用 fast_search（自然语言准确）：{\"query\":\"乐清亚朵酒店标准双人房今晚价格\"}。search_hotel结构化参数对县级市geocode可能不准"
       required: false
+      default: "{}"
       selector:
         object:
+    target_device:
+      name: 选择账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
     subentry_id:
-      name: 子条目ID
-      description: 指定操作哪个账号
+      name: 或输入子条目ID
       required: false
       selector:
         text:
@@ -103,26 +109,33 @@ fliggy_call_tool:
 
 ctrip_call_tool:
   name: 携程 API
-  description: "通过 tool 选择功能，params 传参数。可选 tool: query, search_hotel"
+  description: 携程问道AI查询和酒店搜索。用 query 工具加自然语言可查具体房型价格，如{"query":"乐清亚朵酒店标准双人房今晚多少钱"}
   fields:
     tool:
-      name: 工具
-      description: 选择要调用的功能
+      name: 功能
       required: true
       selector:
         select:
           options:
-            - "query"
-            - "search_hotel"
+            - label: "问道AI查询"
+              value: "query"
+            - label: "搜索酒店"
+              value: "search_hotel"
     params:
       name: 参数
-      description: "工具参数（JSON对象）。例如 query 需要 {\"query\": \"故宫门票\"}"
+      description: "JSON格式。查酒店价格用 query + 自然语言最准：{\"query\":\"乐清亚朵酒店标准双人房今晚多少钱\"}。search_hotel → {\"location\":\"乐清\",\"keyword\":\"亚朵\"}"
       required: false
+      default: "{}"
       selector:
         object:
+    target_device:
+      name: 选择账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
     subentry_id:
-      name: 子条目ID
-      description: 指定操作哪个账号
+      name: 或输入子条目ID
       required: false
       selector:
         text:
@@ -131,49 +144,112 @@ ctrip_call_tool:
 
 mcdonalds_call_tool:
   name: 麦当劳 MCP
-  description: 调用麦当劳 MCP 工具，支持全部 24 个工具
+  description: 查询优惠券、领券、查积分、查订单、查餐品价格。输入门店中文名自动解析为门店编码
   fields:
     tool:
       name: 工具
-      description: 选择要调用的麦当劳 MCP 工具
       required: true
       selector:
         select:
           options:
-            - "query-my-coupons"
-            - "available-coupons"
-            - "auto-bind-coupons"
-            - "query-my-account"
-            - "query-store-coupons"
-            - "query-nearby-stores"
-            - "query-meals"
-            - "query-meal-detail"
-            - "query-meal-assistance"
-            - "query-order"
-            - "order-list"
-            - "create-order"
-            - "calculate-price"
-            - "now-time-info"
-            - "list-nutrition-foods"
-            - "campaign-calendar"
-            - "delivery-create-address"
-            - "delivery-query-addresses"
-            - "delivery-query-stores"
-            - "mall-create-order"
-            - "mall-order-list"
-            - "mall-order-detail"
-            - "mall-points-products"
-            - "mall-product-detail"
+            - label: "可领优惠券列表"
+              value: "available-coupons"
+            - label: "我的优惠券列表"
+              value: "query-my-coupons"
+            - label: "自动领取优惠券"
+              value: "auto-bind-coupons"
+            - label: "查询账户积分"
+              value: "query-my-account"
+            - label: "门店专属优惠券"
+              value: "query-store-coupons"
+            - label: "附近门店查询"
+              value: "query-nearby-stores"
+            - label: "查询餐品"
+              value: "query-meals"
+            - label: "查询订单"
+              value: "query-order"
+            - label: "订单列表"
+              value: "order-list"
+            - label: "活动日历"
+              value: "campaign-calendar"
+            - label: "积分商城商品"
+              value: "mall-points-products"
+            - label: "当前时间信息"
+              value: "now-time-info"
+    store:
+      name: 门店
+      description: '门店名称或编码。支持中文名如「福田高铁站」/「领展中心城」，系统自动解析为门店编码。查询餐品(query-meals)/门店优惠券(query-store-coupons)/下单时必填'
+      required: false
+      selector:
+        text:
+    product:
+      name: 餐品名称
+      description: '筛选特定餐品（可选），如「巨无霸」「麦辣鸡腿堡」，仅对查询餐品(query-meals)有效'
+      required: false
+      selector:
+        text:
     params:
       name: 参数
-      description: 工具参数（JSON对象）。无参数工具传 {}
+      description: "JSON格式。大部分工具传 {}。query-nearby-stores → {\"beType\":1,\"searchType\":1}"
       required: false
       default: "{}"
       selector:
         object:
+    target_device:
+      name: 选择账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
     subentry_id:
-      name: 子条目ID
-      description: 指定操作哪个麦当劳账号（多账号时使用）
+      name: 或输入子条目ID
+      required: false
+      selector:
+        text:
+
+# ========== Luckin Coffee (瑞幸咖啡) ==========
+
+luckin_call_tool:
+  name: 瑞幸咖啡 MCP
+  description: 查门店、查商品、下单、查订单、取消订单。需从 https://open.lkcoffee.com/mcp 获取 token
+  fields:
+    tool:
+      name: 功能
+      required: true
+      selector:
+        select:
+          options:
+            - label: "查附近门店"
+              value: "queryShopList"
+            - label: "搜索商品"
+              value: "searchProductForMcp"
+            - label: "切换商品属性"
+              value: "switchProduct"
+            - label: "商品详情"
+              value: "queryProductDetailInfo"
+            - label: "预览订单（查价格+优惠）"
+              value: "previewOrder"
+            - label: "创建订单"
+              value: "createOrder"
+            - label: "查订单详情"
+              value: "queryOrderDetailInfo"
+            - label: "取消订单"
+              value: "cancelOrder"
+    params:
+      name: 参数
+      description: "JSON格式。queryShopList → {\"longitude\":114.057,\"latitude\":22.543}，searchProductForMcp → {\"deptId\":123,\"query\":\"拿铁\"}，previewOrder → {\"deptId\":123,\"productList\":[{\"amount\":1,\"productId\":456,\"skuCode\":\"SKU001\"}]}"
+      required: false
+      default: "{}"
+      selector:
+        object:
+    target_device:
+      name: 选择账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
+    subentry_id:
+      name: 或输入子条目ID
       required: false
       selector:
         text:
@@ -182,27 +258,35 @@ mcdonalds_call_tool:
 
 baidu_map_call_tool:
   name: 百度地图 API
-  description: "通过 tool 选择功能，params 传参数。可选 tool: search_poi, geocode, reverse_geocode"
+  description: POI搜索、地理编码/逆编码
   fields:
     tool:
-      name: 工具
-      description: 选择要调用的功能
+      name: 功能
       required: true
       selector:
         select:
           options:
-            - "search_poi"
-            - "geocode"
-            - "reverse_geocode"
+            - label: "搜索POI地点"
+              value: "search_poi"
+            - label: "地理编码（地址→坐标）"
+              value: "geocode"
+            - label: "逆地理编码（坐标→地址）"
+              value: "reverse_geocode"
     params:
       name: 参数
-      description: "工具参数（JSON对象）。例如 search_poi 需要 {\"query\": \"天安门\", \"region\": \"北京\"}"
+      description: "JSON格式。search_poi → {\"query\":\"天安门\",\"region\":\"北京\"}，geocode → {\"address\":\"北京市天安门\"}"
       required: false
+      default: "{}"
       selector:
         object:
+    target_device:
+      name: 选择账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
     subentry_id:
-      name: 子条目ID
-      description: 指定操作哪个账号
+      name: 或输入子条目ID
       required: false
       selector:
         text:
@@ -211,35 +295,86 @@ baidu_map_call_tool:
 
 meituan_call_tool:
   name: 美团 API
-  description: 通过 tool 选择功能，params 传参数
+  description: 查优惠券、领券、查订单、搜门店
   fields:
     tool:
-      name: 工具
-      description: 选择要调用的功能
+      name: 功能
       required: true
       selector:
         select:
           options:
-            - "get_coupons"
-            - "claim_all_coupons"
-            - "get_orders"
-            - "get_address_list"
-            - "search_poi_waimai"
-            - "preview_order"
-            - "submit_order"
-            - "get_order_status"
-            - "get_store_info"
-            - "search_stores"
+            - label: "搜索门店"
+              value: "search_stores"
+            - label: "查询优惠券"
+              value: "get_coupons"
+            - label: "领取所有可领券"
+              value: "claim_all_coupons"
+            - label: "查询订单"
+              value: "get_orders"
+            - label: "查门店信息"
+              value: "get_store_info"
+            - label: "查地址列表"
+              value: "get_address_list"
     params:
       name: 参数
-      description: 工具参数（JSON对象）
+      description: "JSON格式。get_coupons/claim_all_coupons → {}，get_orders → {\"page\":1,\"pageSize\":10}，search_stores → {\"keyword\":\"黄焖鸡\"}"
       required: false
       default: "{}"
       selector:
         object:
+    target_device:
+      name: 选择账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
     subentry_id:
-      name: 子条目ID
-      description: 指定操作哪个美团账号（多账号时使用）
+      name: 或输入子条目ID
+      required: false
+      selector:
+        text:
+
+# ========== Meituan Paotui (美团跑腿) ==========
+
+meituan_paotui_call_tool:
+  name: 美团跑腿
+  description: 帮取送、帮买、代取号。流程：搜索地址→预览费用→确认下单。与美团旅游同token
+  fields:
+    tool:
+      name: 功能
+      required: true
+      selector:
+        select:
+          options:
+            - label: "搜索地址（跑腿用）"
+              value: "search_poi"
+            - label: "查地址簿"
+              value: "get_address_list"
+            - label: "预览跑腿订单（看费用）"
+              value: "preview_order"
+            - label: "提交跑腿订单"
+              value: "submit_order"
+            - label: "查跑腿订单状态"
+              value: "get_order_status"
+            - label: "查跑腿历史订单"
+              value: "get_orders"
+            - label: "登录状态检查"
+              value: "login"
+    params:
+      name: 参数
+      description: "JSON格式。preview_order/submit_order → {\"sender\":{},\"recipient\":{\"name\":\"张三\",\"phone\":\"138xxxx\",\"address\":\"深圳海岸城\"},\"goods\":{\"name\":\"文件\",\"count\":1,\"price\":10}}"
+      required: false
+      default: "{}"
+      selector:
+        object:
+    target_device:
+      name: 选择账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
+    subentry_id:
+      name: 或输入子条目ID
       required: false
       selector:
         text:
@@ -248,30 +383,43 @@ meituan_call_tool:
 
 meituan_travel_call_tool:
   name: 美团旅游 API
-  description: "通过 tool 选择功能，params 传参数。可选 tool: search_hotel, search_flight, search_train, search_poi, plan_itinerary, get_travel_orders"
+  description: 搜索酒店、机票、火车票、门票、规划行程，支持预订。用 query 工具可处理任意自然语言请求如"帮我订乐清亚朵酒店高级双床房今晚入住"
   fields:
     tool:
-      name: 工具
-      description: 选择要调用的功能
+      name: 功能
       required: true
       selector:
         select:
           options:
-            - "search_hotel"
-            - "search_flight"
-            - "search_train"
-            - "search_poi"
-            - "plan_itinerary"
-            - "get_travel_orders"
+            - label: "通用查询（支持预订）"
+              value: "query"
+            - label: "搜索酒店"
+              value: "search_hotel"
+            - label: "搜索机票"
+              value: "search_flight"
+            - label: "搜索火车票"
+              value: "search_train"
+            - label: "搜索景点门票"
+              value: "search_poi"
+            - label: "AI规划行程"
+              value: "plan_itinerary"
+            - label: "查询旅行订单"
+              value: "get_travel_orders"
     params:
       name: 参数
-      description: "工具参数（JSON对象）。例如 search_hotel 需要 {\"query\": \"北京\", \"city\": \"北京\"}"
+      description: "JSON格式。通用查询直接传自然语言：{\"query\":\"帮我订乐清亚朵酒店高级双床房今晚入住\",\"city\":\"温州\"}。search_hotel → {\"query\":\"乐清亚朵酒店\",\"city\":\"温州\"}"
       required: false
+      default: "{}"
       selector:
         object:
+    target_device:
+      name: 选择账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
     subentry_id:
-      name: 子条目ID
-      description: 指定操作哪个账号
+      name: 或输入子条目ID
       required: false
       selector:
         text:
@@ -279,32 +427,46 @@ meituan_travel_call_tool:
 # ========== Gaode Maps (高德地图) ==========
 
 gaode_call_tool:
-  name: 高德地图 API
-  description: "通过 tool 选择功能，params 传参数。可选 tool: search_poi, geocode, reverse_geocode 等"
+  name: 高德地图 API（v5升级）
+  description: POI搜索（v5 API数据更丰富）、地理编码、距离计算
   fields:
     tool:
-      name: 工具
-      description: 选择要调用的功能
+      name: 功能
       required: true
       selector:
         select:
           options:
-            - "search_poi"
-            - "search_poi_nearby"
-            - "geocode"
-            - "reverse_geocode"
-            - "get_distance"
-            - "calculate_distance"
-            - "check_in_polygon"
+            - label: "搜索POI（v5升级，支持types分类）"
+              value: "search_poi"
+            - label: "POI详情查询"
+              value: "search_poi_detail"
+            - label: "周边搜索"
+              value: "search_poi_nearby"
+            - label: "路径规划（步行/驾车/骑行/公交）"
+              value: "route_planning"
+            - label: "智能旅游规划"
+              value: "travel_plan"
+            - label: "地理编码（地址→坐标）"
+              value: "geocode"
+            - label: "逆地理编码（坐标→地址）"
+              value: "reverse_geocode"
+            - label: "驾车距离测量"
+              value: "get_distance"
     params:
       name: 参数
-      description: "工具参数（JSON对象）。例如 search_poi 需要 {\"keywords\": \"天安门\", \"region\": \"北京\"}"
+      description: "JSON格式。search_poi(v5) → {\"keywords\":\"希尔顿\",\"region\":\"温州\",\"types\":\"酒店\"}，route_planning → {\"origin\":\"116.397,39.908\",\"destination\":\"116.427,39.903\",\"mode\":\"driving\"}，travel_plan → {\"city\":\"杭州\",\"interests\":\"景点,美食\",\"route_type\":\"walking\"}"
       required: false
+      default: "{}"
       selector:
         object:
+    target_device:
+      name: 选择账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
     subentry_id:
-      name: 子条目ID
-      description: 指定操作哪个账号
+      name: 或输入子条目ID
       required: false
       selector:
         text:
@@ -313,27 +475,35 @@ gaode_call_tool:
 
 music_call_tool:
   name: 音乐 API
-  description: "通过 tool 选择功能，params 传参数。可选 tool: search_songs, get_playlist, get_ranking"
+  description: 搜索歌曲、获取歌单、排行榜
   fields:
     tool:
-      name: 工具
-      description: 选择要调用的功能
+      name: 功能
       required: true
       selector:
         select:
           options:
-            - "search_songs"
-            - "get_playlist"
-            - "get_ranking"
+            - label: "搜索歌曲"
+              value: "search_songs"
+            - label: "获取歌单"
+              value: "get_playlist"
+            - label: "获取排行榜"
+              value: "get_ranking"
     params:
       name: 参数
-      description: "工具参数（JSON对象）。例如 search_songs 需要 {\"keyword\": \"周杰伦\"}"
+      description: "JSON格式。search_songs → {\"keyword\":\"周杰伦\"}，get_ranking → {}"
       required: false
+      default: "{}"
       selector:
         object:
+    target_device:
+      name: 选择账号
+      required: false
+      selector:
+        device:
+          integration: life_hub
     subentry_id:
-      name: 子条目ID
-      description: 指定操作哪个账号
+      name: 或输入子条目ID
       required: false
       selector:
         text:
@@ -342,37 +512,136 @@ music_call_tool:
 
 didi_call_tool:
   name: 滴滴出行 MCP
-  description: "通过 tool 选择工具，params 传参数。可选 tool: taxi_estimate, taxi_create_order, taxi_query_order 等"
+  description: 预估价格、叫车、查订单、地图查询
   fields:
     tool:
       name: 工具
-      description: 选择要调用的 MCP 工具
       required: true
       selector:
         select:
           options:
-            - "taxi_estimate"
-            - "taxi_create_order"
-            - "taxi_query_order"
-            - "taxi_cancel_order"
-            - "taxi_get_driver_location"
-            - "taxi_generate_ride_app_link"
-            - "maps_textsearch"
-            - "maps_place_around"
-            - "maps_regeocode"
-            - "maps_direction_driving"
-            - "maps_direction_transit"
-            - "maps_direction_walking"
-            - "maps_direction_bicycling"
+            - label: "预估打车价格"
+              value: "taxi_estimate"
+            - label: "创建打车订单"
+              value: "taxi_create_order"
+            - label: "查询打车订单"
+              value: "taxi_query_order"
+            - label: "取消打车订单"
+              value: "taxi_cancel_order"
+            - label: "获取司机位置"
+              value: "taxi_get_driver_location"
+            - label: "文本搜索地点"
+              value: "maps_textsearch"
+            - label: "周边搜索"
+              value: "maps_place_around"
+            - label: "逆地理编码"
+              value: "maps_regeocode"
+            - label: "驾车路线规划"
+              value: "maps_direction_driving"
+            - label: "公交路线规划"
+              value: "maps_direction_transit"
+            - label: "步行路线规划"
+              value: "maps_direction_walking"
     params:
       name: 参数
-      description: "工具参数（JSON对象）。例如 taxi_estimate 需要 {\"from_lng\": \"116.397128\", \"from_lat\": \"39.916527\", \"from_name\": \"北京\", \"to_lng\": \"116.407396\", \"to_lat\": \"39.904200\", \"to_name\": \"天安门\"}"
+      description: "JSON格式。示例：taxi_query_order → {}（查最新订单），taxi_estimate → {\"from_name\":\"深圳\",\"to_name\":\"广州\",\"from_lng\":\"114.057\",\"from_lat\":\"22.543\",\"to_lng\":\"113.881\",\"to_lat\":\"22.546\"}，maps_textsearch → {\"keywords\":\"天安门\",\"city\":\"北京\"}，maps_regeocode → {\"location\":\"116.397,39.908\"}"
       required: false
+      default: "{}"
       selector:
         object:
-    subentry_id:
-      name: 子条目ID
-      description: 指定操作哪个滴滴账号（多账号时使用）
+    target_device:
+      name: 选择账号
       required: false
+      selector:
+        device:
+          integration: life_hub
+    subentry_id:
+      name: 或输入子条目ID
+      required: false
+      selector:
+        text:
+
+# ========== 酒店比价 ==========
+
+compare_hotel_price:
+  name: 酒店跨平台比价
+  description: 一次调用查询携程/飞猪/美团旅游三家平台的价格并汇总对比。直接传自然语言即可
+  fields:
+    query:
+      name: 查询内容
+      description: '直接输入查询文本，如"乐清亚朵酒店标准双人房今晚价格"或"乐清南虹广场附近酒店价格"'
+      required: false
+      selector:
+        text:
+    city:
+      name: 城市（可选）
+      required: false
+      selector:
+        text:
+    hotel:
+      name: 酒店名称（可选）
+      required: false
+      selector:
+        text:
+    landmark:
+      name: 商圈或地标（可选）
+      required: false
+      selector:
+        text:
+    room_type:
+      name: 房型
+      required: false
+      default: "标准双人房"
+      selector:
+        text:
+    check_in:
+      name: 入住日期
+      required: false
+      default: ""
+      selector:
+        text:
+    check_out:
+      name: 退房日期
+      required: false
+      default: ""
+      selector:
+        text:
+
+# ========== 统一自然语言查询 ==========
+
+unified_query:
+  name: 统一自然语言查询
+  description: 一次查询发到多个平台。支持勾选，留空则全查
+  fields:
+    query:
+      name: 查询内容
+      description: 传自然语言，如"乐清亚朵酒店标准双人房今晚多少钱"或"温州希尔顿附近有什么好吃的"
+      required: true
+      selector:
+        text:
+          multiline: false
+    platforms:
+      name: 选择平台
+      description: 勾选要查询的平台，留空则全查
+      required: false
+      default: []
+      selector:
+        select:
+          options:
+            - label: "携程（酒店·机票·火车票·门票·攻略）"
+              value: "携程"
+            - label: "飞猪（酒店·机票·火车票·门票·签证）"
+              value: "飞猪"
+            - label: "美团旅游（酒店·机票·火车票·门票·行程规划）"
+              value: "美团旅游"
+            - label: "百度地图（AI语义搜地点·路线·天气）"
+              value: "百度地图"
+            - label: "高德（关键词搜索地点·路线规划·旅游规划）"
+              value: "高德"
+          multiple: true
+    region:
+      name: 地区（仅百度地图/美团有用）
+      required: false
+      default: "全国"
       selector:
         text:

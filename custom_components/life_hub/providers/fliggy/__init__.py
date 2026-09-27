@@ -283,11 +283,20 @@ class FliggyClient(McpClientBase):
         return await self.call_tool("search_flight", args)
 
     async def search_hotel(self, dest_name: str, **kwargs) -> dict:
-        args = {"dest_name": dest_name}
-        for k, v in kwargs.items():
-            if v:
-                args[k] = v
-        return await self.call_tool("search_hotels", args)
+        """搜酒店。优先使用 fast_search（自然语言）解决县级市 geocode 不准的问题。"""
+        # 如果有 check_in/check_out/bed_types 等结构化参数,仍走 search_hotels MCP
+        structured_params = {"check_in_date", "check_out_date", "hotel_bed_types", "hotel_stars", "max_price", "sort"}
+        if structured_params & set(kwargs.keys()):
+            args = {"dest_name": dest_name}
+            for k, v in kwargs.items():
+                if v:
+                    args[k] = v
+            return await self.call_tool("search_hotels", args)
+        # 否则用 fast_search（自然语言），对县级市更准确
+        query = dest_name
+        if kwargs.get("key_words"):
+            query += kwargs["key_words"]
+        return await self.fast_search(query)
 
     async def search_train(self, origin: str, destination: str = "", dep_date: str = "", **kwargs) -> dict:
         args = {"origin": origin}

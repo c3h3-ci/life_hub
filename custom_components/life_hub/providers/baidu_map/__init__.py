@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -28,7 +29,7 @@ AGENT_PLAN_BASE = f"{BAIDU_MAP_API_BASE}/agent_plan/v1"
 
 
 def _headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    return {"Authorization": f"Bearer {token}"}
 
 
 def build_schema(current: dict[str, Any]) -> vol.Schema:
@@ -117,7 +118,8 @@ class BaiduMapClient:
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
             resp.raise_for_status()
-            return await resp.json()
+            text = await resp.text()
+            return json.loads(text)
 
     async def search_poi(self, query: str, region: str = "全国") -> dict:
         """AI 语义搜地点。返回 answer_type + results。"""

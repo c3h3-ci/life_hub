@@ -11,8 +11,14 @@
     }
   },
   "options": {
-    "abort": {
-      "no_options": "无可配置选项。"
+    "step": {
+      "init": {
+        "title": "默认地址",
+        "description": "用于百度天气和一鸣找附近门店。留空则使用 HA 系统位置（{ha_address}）。\n支持任意详细地址，如「广东省深圳市福田区XX花园X栋X单元」。",
+        "data": {
+          "address": "地址"
+        }
+      }
     }
   },
   "config_subentries": {
@@ -40,6 +46,94 @@
         "max_instances_reached": "已达到最大美团实例数量。"
       },
       "entry_type": "美团服务"
+    },
+    "meituan_travel": {
+      "initiate_flow": {
+        "user": "添加美团旅行",
+        "reconfigure": "美团旅行设置"
+      },
+      "channel_title": "美团旅行",
+      "step": {
+        "set_options": {
+          "title": "添加美团旅行",
+          "description": "请输入美团旅行 API Token。",
+          "data": {
+            "api_token": "API Token"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "连接失败。"
+      },
+      "abort": {
+        "already_configured": "美团旅行已配置。",
+        "max_instances_reached": "已达到最大实例数量。"
+      },
+      "entry_type": "美团旅行服务"
+    },
+    "meituan_paotui": {
+      "initiate_flow": {
+        "user": "添加美团跑腿",
+        "reconfigure": "美团跑腿设置"
+      },
+      "channel_title": "美团跑腿",
+      "step": {
+        "set_options": {
+          "title": "添加美团跑腿",
+          "description": "请输入美团跑腿 passport_token。\n\n[📖 获取 Token](https://github.com/meituan/MT-Paotui-For-Client)",
+          "data": {
+            "passport_token": "Passport Token",
+            "lat": "纬度",
+            "lng": "经度"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "连接失败，请检查 passport_token。"
+      },
+      "abort": {
+        "already_configured": "美团跑腿已配置。",
+        "max_instances_reached": "已达到最大美团跑腿实例数量。"
+      },
+      "entry_type": "美团跑腿服务"
+    },
+    "meituan_coupon": {
+      "initiate_flow": {
+        "user": "添加美团红包",
+        "reconfigure": "美团红包设置"
+      },
+      "channel_title": "美团红包",
+      "step": {
+        "sms_login": {
+          "title": "手机号登录",
+          "description": "输入手机号接收短信验证码。",
+          "data": {
+            "phone": "手机号"
+          }
+        },
+        "verify_code": {
+          "title": "验证码",
+          "description": "请输入发送至 {phone} 的验证码。",
+          "data": {
+            "code": "验证码"
+          }
+        },
+        "set_options": {
+          "title": "添加美团红包",
+          "description": "请输入 user_token。",
+          "data": {
+            "user_token": "User Token"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "连接失败。"
+      },
+      "abort": {
+        "already_configured": "美团红包已配置。",
+        "max_instances_reached": "已达到最大美团红包实例数量。"
+      },
+      "entry_type": "美团红包服务"
     },
     "ctrip": {
       "initiate_flow": {
@@ -276,6 +370,30 @@
         "max_instances_reached": "已达到最大实例数量。"
       },
       "entry_type": "滴滴出行服务"
+    },
+    "luckin": {
+      "initiate_flow": {
+        "user": "添加瑞幸咖啡",
+        "reconfigure": "瑞幸咖啡设置"
+      },
+      "channel_title": "瑞幸咖啡",
+      "step": {
+        "set_options": {
+          "title": "添加瑞幸咖啡",
+          "description": "请输入瑞幸咖啡账号。",
+          "data": {
+            "phone": "手机号"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "连接失败。"
+      },
+      "abort": {
+        "already_configured": "瑞幸咖啡已配置。",
+        "max_instances_reached": "已达到最大实例数量。"
+      },
+      "entry_type": "瑞幸咖啡服务"
     }
   },
   "entity": {
@@ -344,6 +462,27 @@
         }
       },
       "status_didi": {
+        "name": "连接状态",
+        "state": {
+          "connected": "已连接",
+          "disconnected": "未连接"
+        }
+      },
+      "status_meituan_paotui": {
+        "name": "连接状态",
+        "state": {
+          "connected": "已连接",
+          "disconnected": "未连接"
+        }
+      },
+      "status_meituan_coupon": {
+        "name": "连接状态",
+        "state": {
+          "connected": "已连接",
+          "disconnected": "未连接"
+        }
+      },
+      "status_luckin": {
         "name": "连接状态",
         "state": {
           "connected": "已连接",

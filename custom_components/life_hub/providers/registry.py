@@ -16,6 +16,9 @@ from .music import PROVIDER_SPEC as MUSIC_PROVIDER_SPEC
 from .fliggy import PROVIDER_SPEC as FLIGGY_PROVIDER_SPEC
 from .gaode import PROVIDER_SPEC as GAODE_PROVIDER_SPEC
 from .didi import PROVIDER_SPEC as DIDI_PROVIDER_SPEC
+from .luckin import PROVIDER_SPEC as LUCKIN_PROVIDER_SPEC
+from .meituan_paotui import PROVIDER_SPEC as MEITUAN_PAOTUI_PROVIDER_SPEC
+from .meituan_coupon import PROVIDER_SPEC as MEITUAN_COUPON_PROVIDER_SPEC
 
 
 # 历史 subentry 命名兼容：旧版 life_hub 把美团旅行拆成 meituan_travel，
@@ -36,6 +39,9 @@ _PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
     MUSIC_PROVIDER_SPEC,
     FLIGGY_PROVIDER_SPEC,
     DIDI_PROVIDER_SPEC,
+    LUCKIN_PROVIDER_SPEC,
+    MEITUAN_PAOTUI_PROVIDER_SPEC,
+    MEITUAN_COUPON_PROVIDER_SPEC,
 )
 
 

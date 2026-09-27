@@ -56,8 +56,8 @@ class McpClientBase:
 
     # ── public API ─────────────────────────────────────────────────────────
 
-    async def health_check(self) -> bool:
-        """Verify the MCP endpoint is reachable by listing tools."""
+    async def list_tools(self) -> dict:
+        """Call MCP tools/list and return the full response."""
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -66,8 +66,13 @@ class McpClientBase:
         }
         body = json.dumps(payload, separators=(",", ":"))
         headers = self._build_headers(body)
+        resp = await self._do_rpc(body, headers)
+        return resp
+
+    async def health_check(self) -> bool:
+        """Verify the MCP endpoint is reachable by listing tools."""
         try:
-            resp = await self._do_rpc(body, headers)
+            resp = await self.list_tools()
             return resp.get("result", {}).get("tools") is not None
         except Exception:
             return False

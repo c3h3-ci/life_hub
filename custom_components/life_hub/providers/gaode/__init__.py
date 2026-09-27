@@ -49,12 +49,12 @@ async def validate_config(hass: HomeAssistant, data: dict[str, Any]) -> None:
     session = async_get_clientsession(hass)
     try:
         async with session.get(
-            f"{GAODE_API_BASE}/v3/place/text",
-            params={"keywords": "天安门", "region": "北京", "key": key, "output": "json"},
+            f"{GAODE_SERVER_API}/place/text",
+            params={"keywords": "天安门", "city": "北京", "key": key},
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
-            body = await resp.json()
-            if body.get("status") != "1":
+            body = await resp.json(content_type=None)
+            if body.get("status") != "1" and body.get("infocode") != "10000":
                 raise ValueError(f"API Key 无效: {body.get('info', '未知错误')}")
     except ValueError:
         raise
@@ -104,39 +104,82 @@ class GaodeClient:
 
     # ========== 基础地图服务 ==========
 
-    async def search_poi(self, keywords: str, region: str = "全国", city_limit: bool = False) -> list:
-        """POI 关键字搜索"""
+    async def search_poi(self, keywords: str, region: str = "全国",
+                         types: str = "", page: int = 1, page_size: int = 20) -> list:
+        """POI 关键字搜索（v5 API，数据更丰富）
+
+        Args:
+            keywords: 搜索关键词，如"希尔顿"
+            region: 城市，如"温州"
+            types: POI类型筛选，如"酒店"、"餐饮"（可选）
+            page: 页码，默认1
+            page_size: 每页条数，默认20
+        """
         params = {
             "keywords": keywords,
-            "region": region,
+            "city": region,
             "key": self._api_key,
-            "output": "json",
-            "city_limit": str(city_limit).lower(),
+            "page_num": str(page),
+            "page_size": str(page_size),
         }
+        if types:
+            params["types"] = types
         async with self._session.get(
-            f"{GAODE_API_BASE}/v3/place/text",
+            f"{GAODE_SERVER_API}/place/text",
             params=params,
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
-            body = await resp.json()
-            return body.get("pois", [])
+            body = await resp.json(content_type=None)
+            pois = body.get("pois", [])
+            # v5 返回的每个 poi 含有更丰富字段：
+            # id, name, type, typecode, address, location,
+            # pname, cityname, adname, adcode, distance
+            return pois
 
-    async def search_poi_nearby(self, location: str, keywords: str = "", radius: int = 3000) -> list:
-        """POI 周边搜索"""
+    async def search_poi_detail(self, poi_id: str) -> dict | None:
+        """查询 POI 详情（v5 API）
+
+        Args:
+            poi_id: POI 的唯一 ID，由 search_poi 返回
+        """
+        params = {
+            "id": poi_id,
+            "key": self._api_key,
+        }
+        async with self._session.get(
+            f"{GAODE_SERVER_API}/place/detail",
+            params=params,
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as resp:
+            body = await resp.json(content_type=None)
+            pois = body.get("pois", [])
+            return pois[0] if pois else None
+
+    async def search_poi_nearby(self, location: str, keywords: str = "",
+                                 radius: int = 3000, types: str = "") -> list:
+        """POI 周边搜索（v5 API）
+
+        Args:
+            location: 中心点坐标 "经度,纬度"
+            keywords: 搜索关键词（可选）
+            radius: 搜索半径（米），默认3000
+            types: POI类型筛选（可选）
+        """
         params = {
             "location": location,
             "key": self._api_key,
-            "output": "json",
             "radius": str(radius),
         }
         if keywords:
             params["keywords"] = keywords
+        if types:
+            params["types"] = types
         async with self._session.get(
-            f"{GAODE_API_BASE}/v3/place/around",
+            f"{GAODE_SERVER_API}/place/around",
             params=params,
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
-            body = await resp.json()
+            body = await resp.json(content_type=None)
             return body.get("pois", [])
 
     async def geocode(self, address: str, city: str = "") -> dict | None:
@@ -173,7 +216,7 @@ class GaodeClient:
             return body.get("regeocode")
 
     async def get_distance(self, origins: str, destination: str, type_: int = 1) -> dict:
-        """路线规划"""
+        """驾车路线距离查询（v3 API）"""
         params = {
             "origins": origins,
             "destination": destination,
@@ -186,8 +229,115 @@ class GaodeClient:
             params=params,
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
-            body = await resp.json()
+            body = await resp.json(content_type=None)
             return body.get("route", {})
+
+    # ========== 路径规划 ==========
+
+    _ROUTE_TYPES = {
+        "walking": "v3/direction/walking",
+        "driving": "v3/direction/driving",
+        "bicycling": "v3/direction/bicycling",
+        "transit": "v3/direction/transit/integrated",
+    }
+
+    async def route_planning(self, origin: str, destination: str,
+                             mode: str = "driving",
+                             city: str = "", city_dest: str = "",
+                             strategy: int = 0) -> dict:
+        """路径规划（步行/驾车/骑行/公交）
+
+        Args:
+            origin: 起点坐标 "经度,纬度" 或地址
+            destination: 终点坐标 "经度,纬度" 或地址
+            mode: 出行方式 walking/driving/bicycling/transit
+            city: 起点城市（公交规划必填）
+            city_dest: 终点城市（跨城公交必填）
+            strategy: 驾车策略（0=最快,1=最省钱,2=最短,3=躲避拥堵）
+        """
+        endpoint = self._ROUTE_TYPES.get(mode, "v3/direction/driving")
+        params = {
+            "origin": origin,
+            "destination": destination,
+            "key": self._api_key,
+            "output": "json",
+        }
+        if mode in ("walking", "driving", "bicycling"):
+            params["destination"] = destination.replace(" ", "")
+            params["origin"] = origin.replace(" ", "")
+        if mode == "driving":
+            params["strategy"] = str(strategy)
+        if mode == "transit":
+            if city:
+                params["city"] = city
+            if city_dest:
+                params["cityd"] = city_dest
+            else:
+                params["cityd"] = city
+
+        async with self._session.get(
+            f"{GAODE_API_BASE}/{endpoint}",
+            params=params,
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as resp:
+            body = await resp.json(content_type=None)
+            route = body.get("route", {})
+            if not route and mode == "transit":
+                transits = body.get("transits", [])
+                if transits:
+                    return {"transits": transits}
+            return route
+
+    async def travel_plan(self, city: str, interests: str,
+                          route_type: str = "driving") -> dict:
+        """智能旅游规划：自动搜索兴趣点并规划路线
+
+        Args:
+            city: 城市名
+            interests: 兴趣点分类，逗号分隔如"景点,美食,酒店"
+            route_type: 路线方式 walking/driving
+        """
+        categories = [c.strip() for c in interests.split(",") if c.strip()]
+        pois_by_cat = {}
+        all_locations = []
+
+        # 搜索各类兴趣点
+        for cat in categories:
+            pois = await self.search_poi(cat, city, page_size=5)
+            pois_by_cat[cat] = pois
+            for p in pois[:3]:
+                loc = p.get("location", "")
+                if loc and loc not in all_locations:
+                    all_locations.append(loc)
+
+        # 规划路线：按顺序连接各点
+        routes = []
+        for i in range(len(all_locations) - 1):
+            if all_locations[i] and all_locations[i + 1]:
+                try:
+                    route = await self.route_planning(
+                        all_locations[i], all_locations[i + 1],
+                        mode=route_type, city=city,
+                    )
+                    routes.append({
+                        "from": all_locations[i],
+                        "to": all_locations[i + 1],
+                        "route": route,
+                    })
+                except Exception:
+                    routes.append({
+                        "from": all_locations[i],
+                        "to": all_locations[i + 1],
+                        "route": {},
+                    })
+
+        return {
+            "city": city,
+            "interests": categories,
+            "pois": pois_by_cat,
+            "route_count": len(routes),
+            "routes": routes,
+        }
 
     # ========== 设备追踪器相关 ==========
 

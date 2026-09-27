@@ -104,6 +104,10 @@ class MeituanTravelClient:
         resp = await self._query("北京", "ping")
         return resp.get("code") == 0
 
+    async def query(self, query: str, city: str = "北京") -> dict:
+        """通用查询——支持预订、比价、查攻略等任意自然语言请求"""
+        return await self._query(city, query)
+
     async def search_hotel(self, query: str, city: str = "北京") -> dict:
         return await self._query(city, f"搜索酒店：{query}")
 
